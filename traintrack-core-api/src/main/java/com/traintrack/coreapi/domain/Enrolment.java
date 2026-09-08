@@ -14,6 +14,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.Filter;
 
 /**
  * orgId is denormalised onto this entity (rather than derived via a join to
@@ -23,6 +24,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "enrolments")
+@Filter(name = TenantFilter.NAME)
 public class Enrolment extends Auditable {
 
     @Id

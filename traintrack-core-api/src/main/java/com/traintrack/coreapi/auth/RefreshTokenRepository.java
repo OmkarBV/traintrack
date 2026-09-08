@@ -1,0 +1,8 @@
+package com.traintrack.coreapi.auth;
+
+import com.traintrack.coreapi.domain.RefreshToken;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
+}

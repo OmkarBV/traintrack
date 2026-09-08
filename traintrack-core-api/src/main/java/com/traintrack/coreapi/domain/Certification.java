@@ -14,10 +14,12 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.Filter;
 
 /** See {@link Enrolment} for why orgId is denormalised here rather than derived via a join. */
 @Entity
 @Table(name = "certifications")
+@Filter(name = TenantFilter.NAME)
 public class Certification extends Auditable {
 
     @Id

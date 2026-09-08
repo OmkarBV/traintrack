@@ -13,11 +13,15 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
+import org.hibernate.annotations.Filter;
 
+/**
+ * Email is globally unique (not per-org): login takes only an email and
+ * password, with no organisation selector, so it must resolve unambiguously.
+ */
 @Entity
-@Table(
-        name = "users",
-        uniqueConstraints = @UniqueConstraint(name = "uq_users_org_email", columnNames = {"org_id", "email"}))
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(name = "uq_users_email", columnNames = "email"))
+@Filter(name = TenantFilter.NAME)
 public class User extends Auditable {
 
     @Id

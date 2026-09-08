@@ -26,7 +26,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <spring-boot.version>3.3.5</spring-boot.version>
-        <testcontainers.version>1.20.3</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
         <aws-sdk.version>2.29.5</aws-sdk.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <springdoc.version>2.6.0</springdoc.version>
@@ -119,6 +119,14 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <configuration>
                         <release>${java.version}</release>
+                        <!--
+                            Without this, Spring MVC/Security can't resolve unnamed
+                            @PathVariable/@RequestParam parameters at runtime (no
+                            -g debug symbols means no reflective parameter names).
+                            spring-boot-starter-parent sets this by default; we
+                            don't inherit from it, so it's set explicitly here.
+                        -->
+                        <parameters>true</parameters>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.mapstruct</groupId>
