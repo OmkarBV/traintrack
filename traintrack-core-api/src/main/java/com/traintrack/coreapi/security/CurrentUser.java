@@ -25,4 +25,8 @@ public final class CurrentUser {
         return get().map(AuthenticatedUser::userId)
                 .orElseThrow(() -> new IllegalStateException("No authenticated user in context"));
     }
+
+    public static UUID requireOrgId() {
+        return currentOrgId().orElseThrow(() -> new IllegalStateException("No authenticated user in context"));
+    }
 }

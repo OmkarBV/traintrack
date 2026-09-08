@@ -21,6 +21,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  mvc:
+    # Lets Spring's own exception resolution (missing/malformed request
+    # headers, unreadable JSON, 404s, etc.) produce RFC 7807 responses too,
+    # not just the exceptions GlobalExceptionHandler explicitly maps.
+    problemdetails:
+      enabled: true
+
 traintrack:
   jwt:
     secret: ${JWT_SECRET:change-me-to-a-long-random-value-in-real-environments}
