@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.certification.CertificationMapper;
 import com.traintrack.coreapi.certification.CertificationRepository;
 import com.traintrack.coreapi.certification.dto.CertificationResponse;
@@ -66,6 +67,9 @@ class EnrolmentServiceTest {
     @Mock
     private IdempotencyService idempotencyService;
 
+    @Mock
+    private AuditPublisher auditPublisher;
+
     private EnrolmentService enrolmentService;
     private final UUID orgId = UUID.randomUUID();
 
@@ -78,7 +82,8 @@ class EnrolmentServiceTest {
                 certificationRepository,
                 enrolmentMapper,
                 certificationMapper,
-                idempotencyService);
+                idempotencyService,
+                auditPublisher);
         AuthenticatedUser principal =
                 new AuthenticatedUser(UUID.randomUUID(), orgId, "admin@acme.test", Set.of("ENROLMENT_CREATE"));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, List.of()));

@@ -28,6 +28,15 @@ spring:
     problemdetails:
       enabled: true
 
+  kafka:
+    bootstrap-servers: localhost:${KAFKA_PORT:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Wait for all in-sync replicas — a no-op on the single-broker local
+      # setup, but the correct durability setting for a real cluster.
+      acks: all
+
 traintrack:
   jwt:
     secret: ${JWT_SECRET:change-me-to-a-long-random-value-in-real-environments}

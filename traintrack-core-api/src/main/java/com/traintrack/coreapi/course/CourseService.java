@@ -1,5 +1,6 @@
 package com.traintrack.coreapi.course;
 
+import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.common.exception.NotFoundException;
 import com.traintrack.coreapi.course.dto.CourseCreateRequest;
 import com.traintrack.coreapi.course.dto.CourseUpdateRequest;
@@ -19,15 +20,19 @@ public class CourseService {
 
     private final CourseRepository courseRepository;
     private final OrganisationRepository organisationRepository;
+    private final AuditPublisher auditPublisher;
 
-    public CourseService(CourseRepository courseRepository, OrganisationRepository organisationRepository) {
+    public CourseService(
+            CourseRepository courseRepository, OrganisationRepository organisationRepository, AuditPublisher auditPublisher) {
         this.courseRepository = courseRepository;
         this.organisationRepository = organisationRepository;
+        this.auditPublisher = auditPublisher;
     }
 
     @Transactional
     public Course create(CourseCreateRequest request) {
-        Organisation organisation = organisationRepository.getReferenceById(CurrentUser.requireOrgId());
+        UUID orgId = CurrentUser.requireOrgId();
+        Organisation organisation = organisationRepository.getReferenceById(orgId);
         Course course = new Course(
                 organisation,
                 request.title(),
@@ -35,7 +40,15 @@ public class CourseService {
                 request.durationHours(),
                 request.validityMonths(),
                 CourseStatus.DRAFT);
-        return courseRepository.save(course);
+        Course saved = courseRepository.save(course);
+        auditPublisher.record(
+                orgId,
+                CurrentUser.requireUserId(),
+                "Course",
+                saved.getId(),
+                "COURSE_CREATED",
+                "Course '" + saved.getTitle() + "' created");
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -56,11 +69,26 @@ public class CourseService {
         course.setDurationHours(request.durationHours());
         course.setValidityMonths(request.validityMonths());
         course.setStatus(request.status());
+        auditPublisher.record(
+                course.getOrganisation().getId(),
+                CurrentUser.requireUserId(),
+                "Course",
+                course.getId(),
+                "COURSE_UPDATED",
+                "Course '" + course.getTitle() + "' updated");
         return course;
     }
 
     @Transactional
     public void delete(UUID id) {
-        courseRepository.delete(getById(id));
+        Course course = getById(id);
+        courseRepository.delete(course);
+        auditPublisher.record(
+                course.getOrganisation().getId(),
+                CurrentUser.requireUserId(),
+                "Course",
+                course.getId(),
+                "COURSE_DELETED",
+                "Course '" + course.getTitle() + "' deleted");
     }
 }

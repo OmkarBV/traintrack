@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.common.exception.NotFoundException;
 import com.traintrack.coreapi.course.dto.CourseCreateRequest;
 import com.traintrack.coreapi.course.dto.CourseUpdateRequest;
@@ -36,12 +37,15 @@ class CourseServiceTest {
     @Mock
     private OrganisationRepository organisationRepository;
 
+    @Mock
+    private AuditPublisher auditPublisher;
+
     private CourseService courseService;
     private final UUID orgId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        courseService = new CourseService(courseRepository, organisationRepository);
+        courseService = new CourseService(courseRepository, organisationRepository, auditPublisher);
         AuthenticatedUser principal =
                 new AuthenticatedUser(UUID.randomUUID(), orgId, "trainer@acme.test", Set.of("COURSE_CREATE"));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, List.of()));

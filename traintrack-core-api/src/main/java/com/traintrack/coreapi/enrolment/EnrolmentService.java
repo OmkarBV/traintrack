@@ -1,5 +1,6 @@
 package com.traintrack.coreapi.enrolment;
 
+import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.certification.CertificationRepository;
 import com.traintrack.coreapi.certification.CertificationMapper;
 import com.traintrack.coreapi.certification.dto.CertificationResponse;
@@ -37,6 +38,7 @@ public class EnrolmentService {
     private final EnrolmentMapper enrolmentMapper;
     private final CertificationMapper certificationMapper;
     private final IdempotencyService idempotencyService;
+    private final AuditPublisher auditPublisher;
 
     public EnrolmentService(
             EnrolmentRepository enrolmentRepository,
@@ -45,7 +47,8 @@ public class EnrolmentService {
             CertificationRepository certificationRepository,
             EnrolmentMapper enrolmentMapper,
             CertificationMapper certificationMapper,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            AuditPublisher auditPublisher) {
         this.enrolmentRepository = enrolmentRepository;
         this.userRepository = userRepository;
         this.courseRepository = courseRepository;
@@ -53,6 +56,7 @@ public class EnrolmentService {
         this.enrolmentMapper = enrolmentMapper;
         this.certificationMapper = certificationMapper;
         this.idempotencyService = idempotencyService;
+        this.auditPublisher = auditPublisher;
     }
 
     /**
@@ -94,7 +98,16 @@ public class EnrolmentService {
         Course course = courseRepository
                 .findByIdScoped(request.courseId())
                 .orElseThrow(() -> new NotFoundException("Course not found: " + request.courseId()));
-        return enrolmentRepository.save(new Enrolment(orgId, course, user, EnrolmentStatus.ENROLLED, Instant.now()));
+        Enrolment saved =
+                enrolmentRepository.save(new Enrolment(orgId, course, user, EnrolmentStatus.ENROLLED, Instant.now()));
+        auditPublisher.record(
+                orgId,
+                CurrentUser.requireUserId(),
+                "Enrolment",
+                saved.getId(),
+                "ENROLMENT_CREATED",
+                "User '" + user.getEmail() + "' enrolled in course '" + course.getTitle() + "'");
+        return saved;
     }
 
     /**
@@ -128,6 +141,24 @@ public class EnrolmentService {
 
         Certification certification = new Certification(
                 enrolment.getOrgId(), enrolment.getUser(), course, now, expiresAt, CertificationStatus.ACTIVE);
-        return certificationMapper.toResponse(certificationRepository.save(certification));
+        Certification savedCertification = certificationRepository.save(certification);
+
+        UUID actorId = CurrentUser.requireUserId();
+        auditPublisher.record(
+                enrolment.getOrgId(),
+                actorId,
+                "Enrolment",
+                enrolment.getId(),
+                "ENROLMENT_COMPLETED",
+                "Enrolment completed for course '" + course.getTitle() + "'");
+        auditPublisher.record(
+                enrolment.getOrgId(),
+                actorId,
+                "Certification",
+                savedCertification.getId(),
+                "CERTIFICATION_ISSUED",
+                "Certification issued for course '" + course.getTitle() + "', expires " + expiresAt);
+
+        return certificationMapper.toResponse(savedCertification);
     }
 }
