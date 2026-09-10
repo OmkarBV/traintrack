@@ -6,6 +6,12 @@ spring:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:traintrack_core}
     username: ${POSTGRES_USER:traintrack}
     password: ${POSTGRES_PASSWORD:traintrack}
+    hikari:
+      # Explicit, not the default 10: bulk-enrolment's worker pool (see
+      # BulkEnrolmentExecutorConfig) can hold up to 8 connections at once
+      # doing row-processing work; 15 leaves 7 free for ordinary request
+      # traffic while a bulk job is running.
+      maximum-pool-size: 15
 
   jpa:
     # Flyway owns the schema. Hibernate only validates that entity mappings
