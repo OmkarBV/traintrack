@@ -13,8 +13,10 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Delivers outbox rows to the {@code audit.events} topic, partitioned by
- * orgId so events for one organisation stay ordered.
+ * Delivers outbox rows to whichever Kafka topic each row names (see
+ * {@code OutboxEvent.topic}) — generic across event types, not
+ * audit-events-specific — partitioned by orgId so events for one
+ * organisation stay ordered within a topic.
  *
  * <p>Two delivery paths, deliberately combined:
  * <ul>
@@ -27,15 +29,14 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * Both call the same idempotent publish path, and both are safe to run
  * concurrently across multiple app instances without any coordination
  * (unlike the scheduled jobs Phase 6 adds, which need ShedLock because they
- * mutate business data) — audit-service dedupes on eventId, so a row
- * published twice by two racing attempts is harmless, not a duplicate audit
- * entry.
+ * mutate business data) — a row published twice by two racing attempts is
+ * harmless as long as the consumer on the other end dedupes on eventId, the
+ * way audit-service does for audit.events.
  */
 @Component
 public class OutboxRelay {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
-    private static final String TOPIC = "audit.events";
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -62,7 +63,7 @@ public class OutboxRelay {
                 return;
             }
             try {
-                kafkaTemplate.send(TOPIC, e.getOrgId().toString(), e.getPayload()).get(5, TimeUnit.SECONDS);
+                kafkaTemplate.send(e.getTopic(), e.getOrgId().toString(), e.getPayload()).get(5, TimeUnit.SECONDS);
                 e.markPublished();
                 outboxEventRepository.save(e);
             } catch (Exception ex) {

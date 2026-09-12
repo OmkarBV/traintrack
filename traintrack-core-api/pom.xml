@@ -148,6 +148,19 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <!--
+                    spring-boot-starter-parent binds the repackage goal to the
+                    package phase automatically; since we don't inherit from
+                    it, that binding has to be declared explicitly, or `mvn
+                    package` silently produces a plain (non-executable) jar.
+                -->
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

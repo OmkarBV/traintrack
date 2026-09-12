@@ -43,6 +43,10 @@ public class Certification extends Auditable {
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    /** Set once, the first time the expiry-warning job notifies for this certification — see CertificationExpiryService. */
+    @Column(name = "expiring_notified_at")
+    private Instant expiringNotifiedAt;
+
     /** S3 object key for the generated PDF certificate; populated in Phase 7, nullable until then. */
     @Column(name = "certificate_url", length = 1024)
     private String certificateUrl;
@@ -90,6 +94,14 @@ public class Certification extends Auditable {
 
     public Instant getExpiresAt() {
         return expiresAt;
+    }
+
+    public Instant getExpiringNotifiedAt() {
+        return expiringNotifiedAt;
+    }
+
+    public void markExpiringNotified() {
+        this.expiringNotifiedAt = Instant.now();
     }
 
     public String getCertificateUrl() {

@@ -41,7 +41,7 @@ class OutboxRelayTest {
     @SuppressWarnings("unchecked")
     void onOutboxEventReadyPublishesAndMarksTheRowPublished() {
         UUID id = UUID.randomUUID();
-        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "{}");
+        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "audit.events", "{}");
         when(outboxEventRepository.findById(id)).thenReturn(Optional.of(event));
         when(kafkaTemplate.send(eq("audit.events"), eq(event.getOrgId().toString()), eq(event.getPayload())))
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
@@ -55,7 +55,7 @@ class OutboxRelayTest {
     @Test
     void skipsRowsAlreadyPublished() {
         UUID id = UUID.randomUUID();
-        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "{}");
+        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "audit.events", "{}");
         event.markPublished();
         when(outboxEventRepository.findById(id)).thenReturn(Optional.of(event));
 
@@ -68,8 +68,8 @@ class OutboxRelayTest {
     @Test
     @SuppressWarnings("unchecked")
     void sweepPublishesEveryPendingRow() {
-        OutboxEvent e1 = new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "{}");
-        OutboxEvent e2 = new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "{}");
+        OutboxEvent e1 = new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "audit.events", "{}");
+        OutboxEvent e2 = new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "audit.events", "{}");
         when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(e1, e2));
         when(outboxEventRepository.findById(e1.getId())).thenReturn(Optional.of(e1));
         when(outboxEventRepository.findById(e2.getId())).thenReturn(Optional.of(e2));
@@ -84,7 +84,7 @@ class OutboxRelayTest {
     @Test
     void leavesTheRowUnpublishedWhenTheSendFails() {
         UUID id = UUID.randomUUID();
-        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "{}");
+        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "audit.events", "{}");
         when(outboxEventRepository.findById(id)).thenReturn(Optional.of(event));
         when(kafkaTemplate.send(any(), any(), any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 

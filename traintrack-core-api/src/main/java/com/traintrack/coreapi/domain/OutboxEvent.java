@@ -7,6 +7,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Generic across topics — the outbox pattern's guarantee (durably recorded
+ * in the same transaction as the business change, delivered out-of-band by
+ * OutboxRelay) is equally useful for any Kafka event this app produces, not
+ * just audit events. {@code topic} says where a row is headed; the payload
+ * itself is opaque to this entity and OutboxRelay alike.
+ */
 @Entity
 @Table(name = "outbox_events")
 public class OutboxEvent {
@@ -16,6 +23,9 @@ public class OutboxEvent {
 
     @Column(name = "org_id", nullable = false)
     private UUID orgId;
+
+    @Column(nullable = false)
+    private String topic;
 
     @Column(nullable = false, columnDefinition = "text")
     private String payload;
@@ -29,9 +39,10 @@ public class OutboxEvent {
     protected OutboxEvent() {
     }
 
-    public OutboxEvent(UUID id, UUID orgId, String payload) {
+    public OutboxEvent(UUID id, UUID orgId, String topic, String payload) {
         this.id = id;
         this.orgId = orgId;
+        this.topic = topic;
         this.payload = payload;
         this.createdAt = Instant.now();
     }
@@ -42,6 +53,10 @@ public class OutboxEvent {
 
     public UUID getOrgId() {
         return orgId;
+    }
+
+    public String getTopic() {
+        return topic;
     }
 
     public String getPayload() {

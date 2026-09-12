@@ -1,47 +1,43 @@
 package com.traintrack.coreapi.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.traintrack.coreapi.domain.OutboxEvent;
+import com.traintrack.common.event.AuditEvent;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class AuditPublisherTest {
 
     @Mock
-    private OutboxEventRepository outboxEventRepository;
-
-    @Mock
-    private ApplicationEventPublisher applicationEventPublisher;
-
-    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    private OutboxWriter outboxWriter;
 
     @Test
-    void recordWritesAnOutboxRowAndSignalsTheRelay() {
+    void recordBuildsAnAuditEventAndDelegatesToTheOutboxWriter() {
         UUID orgId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
         UUID entityId = UUID.randomUUID();
-        AuditPublisher publisher =
-                new AuditPublisher(outboxEventRepository, applicationEventPublisher, objectMapper, "traintrack-core-api");
+        AuditPublisher publisher = new AuditPublisher(outboxWriter, "traintrack-core-api");
 
         publisher.record(orgId, actorId, "Course", entityId, "COURSE_CREATED", "Course 'X' created");
 
-        ArgumentCaptor<OutboxEvent> outboxCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(outboxCaptor.capture());
-        OutboxEvent saved = outboxCaptor.getValue();
-        assertThat(saved.getOrgId()).isEqualTo(orgId);
-        assertThat(saved.getPayload()).contains("COURSE_CREATED").contains(entityId.toString()).contains("traintrack-core-api");
+        ArgumentCaptor<UUID> eventIdCaptor = ArgumentCaptor.forClass(UUID.class);
+        ArgumentCaptor<AuditEvent> eventCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(outboxWriter).write(eventIdCaptor.capture(), eq(orgId), eq("audit.events"), eventCaptor.capture());
 
-        ArgumentCaptor<OutboxEventReady> eventCaptor = ArgumentCaptor.forClass(OutboxEventReady.class);
-        verify(applicationEventPublisher).publishEvent(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().outboxEventId()).isEqualTo(saved.getId());
+        AuditEvent event = eventCaptor.getValue();
+        assertThat(event.eventId()).isEqualTo(eventIdCaptor.getValue());
+        assertThat(event.orgId()).isEqualTo(orgId);
+        assertThat(event.actorUserId()).isEqualTo(actorId);
+        assertThat(event.entityType()).isEqualTo("Course");
+        assertThat(event.entityId()).isEqualTo(entityId.toString());
+        assertThat(event.action()).isEqualTo("COURSE_CREATED");
+        assertThat(event.sourceApplication()).isEqualTo("traintrack-core-api");
     }
 }
