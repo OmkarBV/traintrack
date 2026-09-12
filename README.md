@@ -1,6 +1,96 @@
 # TrainTrack
 
-Training and certification management platform for organisations running compliance training. Backend only — see the project brief for the full phase breakdown. This README grows with each phase; a full architecture write-up lands in the final polish phase.
+[![CI](https://github.com/OmkarBV/traintrack/actions/workflows/ci.yml/badge.svg)](https://github.com/OmkarBV/traintrack/actions/workflows/ci.yml)
+
+Training and certification management platform for organisations running compliance training: course catalog, enrolments, certificate issuance with real PDF documents, an audit trail that survives its consumer being down, scheduled compliance jobs coordinated across multiple instances, and an AI assistant that respects the same permission model as the REST API. Backend only, built in ten phases (below), each one committed and pushed separately with its own reasoning intact rather than squashed into one final state.
+
+## Contents
+
+- [Architecture](#architecture)
+- [Getting started](#getting-started)
+- [Design decisions, phase by phase](#design-decisions-phase-by-phase) — the "why," not just the "what," for every non-obvious call made along the way
+- [What I'd do differently at 100x scale](#what-id-do-differently-at-100x-scale)
+
+## Architecture
+
+Two Spring Boot services, one shared Postgres instance (two separate databases — see below), Kafka as the seam between them, S3 for certificate documents, and Anthropic's API for the assistant. Nothing here is a microservices reference architecture for its own sake: `audit-service` is genuinely separate because an audit trail should survive the thing it's auditing having a bad day, not because "more services" is a goal.
+
+```mermaid
+flowchart LR
+    U["Browser / API client"]
+
+    subgraph CORE["core-api : 8080"]
+        API["REST API<br/>JWT + permission-based RBAC"]
+        SCHED["Scheduled jobs<br/>(ShedLock-coordinated)"]
+        ASSIST["AI assistant<br/>(Anthropic tool-calling)"]
+    end
+
+    subgraph AUDIT["audit-service : 8081"]
+        CONSUMER["Kafka consumer<br/>(manual ack, retry + DLT)"]
+        AUDITAPI["Audit query API"]
+    end
+
+    PG[("Postgres<br/>traintrack_core")]
+    PGAUDIT[("Postgres<br/>traintrack_audit")]
+    KAFKA{{"Kafka<br/>audit.events / certification.expiring"}}
+    S3[("S3 / LocalStack<br/>certificate PDFs")]
+    ANTHROPIC[["Anthropic Messages API"]]
+
+    U -->|HTTPS + JWT| API
+    U -->|HTTPS| AUDITAPI
+    API -->|JDBC| PG
+    API -->|transactional outbox| KAFKA
+    SCHED -.->|distributed lock, same PG| PG
+    ASSIST -->|tool-calling over HTTP| ANTHROPIC
+    API -->|upload PDF / presign download| S3
+    KAFKA -->|"@KafkaListener"| CONSUMER
+    CONSUMER -->|JDBC| PGAUDIT
+    AUDITAPI -->|JDBC| PGAUDIT
+```
+
+**Why one Postgres instance but two databases, not two instances.** `audit-service` needing to survive independently of `core-api` is about process and deployment independence — it must keep consuming Kafka and stay queryable even if `core-api` (or its database load) is having problems. A shared Postgres *instance* with a separate *database* per service gets that: no shared schema, no cross-service foreign keys, no way for one service's migrations to touch the other's tables, but without the operational cost of a second database server for a project at this scale (see [docker/postgres/init-db.sh](docker/postgres/init-db.sh)). A real production deployment with a large audit volume would likely split these onto separate instances, or even a separate storage engine better suited to append-mostly, rarely-updated data — that trade-off is called out again below.
+
+**Why Kafka, specifically, as the seam** rather than a direct HTTP call from `core-api` to `audit-service`: see the "Audit pipeline" section further down for the full reasoning — the short version is that a direct call would make certification issuance fail whenever the audit service happened to be down, which is backwards for a system whose whole point is a reliable compliance record.
+
+## Getting started
+
+Prerequisites: JDK 21 and Docker. Maven itself isn't required — every command below uses the bundled wrapper (`./mvnw`).
+
+```bash
+cp .env.example .env            # defaults work for local dev as-is
+docker compose up -d            # Postgres, Kafka (KRaft, no Zookeeper), LocalStack (S3)
+
+./mvnw -pl traintrack-core-api -am spring-boot:run       # :8080 — runs Flyway migrations on startup
+./mvnw -pl traintrack-audit-service -am spring-boot:run  # :8081 — separate schema, separate consumer group
+```
+
+Every seeded user's password is `password123`. Two organisations are seeded specifically so tenant isolation is testable out of the box, not just asserted:
+
+| Email | Organisation | Role | Can see |
+|---|---|---|---|
+| `admin@acme.test` | Acme Compliance Ltd | ADMIN | everything, within Acme |
+| `trainer@acme.test` | Acme Compliance Ltd | TRAINER | courses, enrolments, certificates — org-wide |
+| `employee@acme.test` | Acme Compliance Ltd | EMPLOYEE | read-only, own data only |
+| `admin@beta.test` | Beta Industries | ADMIN | everything, within Beta — nothing of Acme's |
+
+```bash
+./mvnw test    # full suite — see "Testing", in the Phase 9 section below, for what does and doesn't need Docker
+```
+
+API docs (Swagger UI) are at `/swagger-ui.html` on each service once running.
+
+## Design decisions, phase by phase
+
+The sections below are what actually happened, in build order, including the real bugs found along the way — not a cleaned-up retelling. Each one names a concrete trade-off rather than asserting a best practice; skip to whichever's relevant:
+
+| Decision | Why it's not the obvious default |
+|---|---|
+| [Audit pipeline](#audit-pipeline-what-happens-if-audit-service-is-down-for-two-hours) | Transactional outbox + Kafka, so certification issuance never depends on `audit-service`'s uptime |
+| [Bulk enrolment](#bulk-enrolment-concurrency-design-and-measured-benchmark) | A bounded worker pool sized to the DB connection pool, not CPU count — and a real cross-tenant leak this caught |
+| [Scheduled jobs](#scheduled-jobs-why-shedlock-matters-and-what-idempotent-actually-means-here) | ShedLock across instances, and two genuinely different meanings of "idempotent" for two jobs that look similar |
+| [S3 document storage](#s3-document-storage-one-code-path-for-localstack-and-real-aws-and-why-the-upload-isnt-async) | One S3 client for LocalStack and real AWS, and a deliberate choice to keep certificate upload synchronous |
+| [AI assistant](#ai-assistant-real-rbac-enforcement-a-real-distributed-rate-limit-and-a-real-bug-caught-by-testing-both-live) | Tool-level RBAC against real permissions, a Postgres-backed distributed rate limit, and a real bug in upstream-error handling |
+| [Testing](#phase-9-filling-in-the-testing-pyramid--web-layer-slices-and-what-testcontainers-cant-prove-in-this-sandbox) | Where unit tests, `@WebMvcTest` slices, and Testcontainers each earn their place — and an honest account of what wasn't run |
 
 ## Audit pipeline: what happens if audit-service is down for two hours
 
@@ -84,3 +174,21 @@ A real, if minor, gotcha surfaced immediately: these slices don't load the app's
 **Testcontainers additions** (`CourseEnrolmentLifecycleIntegrationTest`, `AssistantRateLimiterIntegrationTest`) extend the existing real-Postgres integration-test base to two things nothing covered yet: that Phase 2's tenant-isolation guarantee generalises correctly to Phase 3's entities (a course created by one org is invisible to another; enrolling a user from a different org 404s, not 403 or 200 — the same distinction `AuthOrgIsolationIntegrationTest` established for Users), and — the more interesting one — that `AssistantRateLimiter`'s atomic-increment claim actually holds under real concurrency: 30 threads incrementing the same user's counter simultaneously against a real Postgres, asserting the final count is exactly 30. A mocked-`JdbcTemplate` unit test can assert that the SQL *looks* atomic; only a real database under real concurrent load can prove the `INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` doesn't lose an update to a race — which is the entire reason that method isn't a separate `SELECT` followed by an `UPDATE`.
 
 **Full transparency on what's actually verified here versus reasoned through.** This sandbox's Docker daemon enforces a minimum API version newer than what testcontainers-java 1.21.4's container-detection probe speaks — a pre-existing, already-documented constraint from before this phase (see `AbstractIntegrationTest`'s Javadoc), not something introduced now. All three Testcontainers-based test classes, old and new, fail identically here with "Could not find a valid Docker environment" — confirmed to be that same constraint and not a bug in the new tests, by checking that the failure is the exact same error at the exact same point (container startup, before any test logic runs) as the pre-existing test already exhibits. Both new integration tests compile cleanly and were reviewed carefully against the real DTOs, permission seed data, and idempotency behavior they exercise, but — unlike every other live claim in this README — they have not been run to green. They're expected to pass in the user's own environment or CI with a Docker daemon testcontainers-java can actually negotiate with.
+
+## What I'd do differently at 100x scale
+
+Everything above was sized for a portfolio project's real but modest scale — one Postgres instance, a handful of app instances, traffic that fits comfortably on one machine's connection pool. None of it is wrong at that scale; some of it stops being right well before 100x. In roughly the order they'd start to hurt:
+
+- **The rate limiter would move out of the primary OLTP database.** `assistant_rate_limits` does one atomic upsert per assistant request against the same Postgres instance serving every other read and write. That's fine at current volume and is exactly why it's a fixed-window Postgres counter rather than something fancier — but at 100x request volume, a handful of heavy users become hot rows, contending for the same lock on every request and competing with unrelated business traffic for the same connection pool. The fix is a purpose-built layer for this — Redis with a Lua-scripted token bucket, or a dedicated rate-limiting service — that isolates "is this caller over quota" from "is the database that runs the business healthy."
+
+- **Certificate generation and upload would move off the request path entirely.** Phase 7 made this synchronous deliberately: a certification without a retrievable certificate is a broken record, so a transient S3 outage should fail the whole `complete()` call rather than paper over it. That reasoning holds at any scale — what changes is the acceptable latency and connection-hold time of doing it inline. At 100x, this becomes the same transactional-outbox shape Phase 4 already uses for Kafka: commit the certification row immediately, enqueue a "generate and upload" outbox event in the same transaction, and let a background worker pool (with retry) handle the PDF and S3 call — the API response no longer waits on either.
+
+- **ShedLock's one global lock per job would become a bottleneck, not just a coordination mechanism.** It's the right tool for "exactly one instance runs this job" at any scale — the problem at 100x is that the *job itself* stops fitting on one instance. Sweeping certification expiry across a dataset 100x larger inside one lock's `lockAtMostFor` window doesn't work no matter which instance holds the lock. That points toward sharding the work (by an org-id hash range, say) with one lock per shard, so the *coordination* guarantee stays exactly as simple while the *work* parallelises across instances.
+
+- **The Hibernate `@Filter`-based tenant scoping would get a second, independent layer underneath it.** `TenantAwareJpaTransactionManager` enabling an org-scoping filter on every transaction is a good single point of enforcement — structurally hard to forget on a new query, unlike a hand-written `WHERE org_id = ?` on every repository method. It's still exactly one mechanism, enforced in application code. At a scale where a cross-tenant leak is catastrophic rather than merely bad, I'd add Postgres row-level security policies on every tenant-owned table as a second, independent backstop — so a bug in the Java layer (a raw query that bypasses the filter, a new entity that forgets the annotation) still can't leak another org's data, because the database itself refuses the row.
+
+- **Bulk enrolment's worker pool would stop being one instance's thread pool.** Phase 5 sized `bulkEnrolmentExecutor` against that one instance's own JDBC connection pool — correct for "how many rows can this instance process at once," but a ceiling on total system throughput that adding more instances doesn't raise on its own, since each new instance just adds its own separately-sized pool against the same shared database. At 100x scale, with genuinely large batches from many orgs concurrently, the natural evolution is to make `bulk_enrolment_job_rows` (already effectively a work queue, just polled by one instance) a real queue — consumed by a pool of workers that scales independently of any request-serving instance.
+
+- **Observability would need to exist at all.** Every "verified live" claim in this README came from a manual curl session and reading application logs by eye — completely reasonable at this scale, and how most of the real bugs in this project were actually found. At 100x, that doesn't scale to a human: structured logging with correlation IDs that survive the outbox → Kafka → consumer hop, metrics on outbox lag and rate-limiter rejection rates and certificate-upload failure rates, and alerts on the failure modes this README already knows about (a stuck outbox sweep, a ShedLock job that's stopped running, a consumer group that's stopped advancing) — not because any of those failure modes are new at 100x, but because at 100x nobody's watching the logs when they happen.
+
+- **The audit database would stop being "the other database on the same Postgres instance."** That shared-instance, separate-database split (see Architecture, above) buys process independence cheaply at this scale. Audit data is written far more than it's read and only ever grows, so at real volume I'd partition `audit_events` by time and move genuinely cold partitions to cheaper storage — while keeping the actual architectural decision this project already made (audit-service stays independently deployable and queryable) unchanged, because that reasoning doesn't get weaker at scale, only the storage underneath it needs to change.

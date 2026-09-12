@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      # Testcontainers spins up its own Postgres container directly against
+      # the runner's Docker daemon (GitHub-hosted ubuntu runners ship Docker
+      # pre-installed and pre-configured for exactly this) — no docker-compose
+      # or GitHub Actions "services:" block needed here.
+      - name: Run tests
+        run: ./mvnw --batch-mode --no-transfer-progress test
