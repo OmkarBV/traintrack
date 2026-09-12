@@ -7,7 +7,7 @@ Two files, both optional to combine:
 
 ## Use it
 
-1. `docker compose up -d`, then start core-api (`./mvnw -pl traintrack-core-api -am spring-boot:run`, `:8080`) — and audit-service too if you want the "Audit Service" folder to return anything (`:8081`).
+1. `docker compose up -d`, then (see the main README's Getting Started for the one-time `traintrack-common` install this needs) start core-api (`./mvnw -pl traintrack-core-api spring-boot:run`, `:8080`) — and audit-service too if you want the "Audit Service" folder to return anything (`:8081`).
 2. Import `TrainTrack.postman_collection.json` (File → Import, or drag it in). Import `TrainTrack.postman_environment.json` the same way if you want the environment dropdown too, then select **TrainTrack — Local** from it (top-right of the Postman window).
 3. Run the four requests in **Auth** first — Acme Admin, Trainer, Employee, Beta Admin. Everything else depends on the tokens they capture. Easiest way: open the collection's `...` menu → **Run collection** and run the whole thing top to bottom once.
 

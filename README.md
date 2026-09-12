@@ -60,9 +60,13 @@ Prerequisites: JDK 21 and Docker. Maven itself isn't required — every command 
 cp .env.example .env            # defaults work for local dev as-is
 docker compose up -d            # Postgres, Kafka (KRaft, no Zookeeper), LocalStack (S3)
 
-./mvnw -pl traintrack-core-api -am spring-boot:run       # :8080 — runs Flyway migrations on startup
-./mvnw -pl traintrack-audit-service -am spring-boot:run  # :8081 — separate schema, separate consumer group
+set -a && source .env && set +a                    # so Spring picks up JWT_SECRET, AWS_*, etc.
+./mvnw -pl traintrack-common install -DskipTests    # one-time per checkout — see note below
+./mvnw -pl traintrack-core-api spring-boot:run       # :8080 — runs Flyway migrations on startup
+./mvnw -pl traintrack-audit-service spring-boot:run  # :8081 (separate terminal) — separate schema, separate consumer group
 ```
+
+`-pl <module> -am spring-boot:run` looks like the natural way to run one module while also building the ones it depends on, but doesn't work here: `-am` pulls the parent aggregator POM into the reactor too, and since `spring-boot:run` isn't bound to a lifecycle phase, Maven tries to run it against *every* project in that reactor — including `traintrack-parent` itself, which has no main class and fails before ever reaching the module you actually asked for. Installing `traintrack-common` once (it changes rarely) sidesteps this entirely: with it sitting in the local repo, `-pl <module> spring-boot:run` on its own resolves the dependency normally and only ever touches the one module you named.
 
 Every seeded user's password is `password123`. Two organisations are seeded specifically so tenant isolation is testable out of the box, not just asserted:
 
