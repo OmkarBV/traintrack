@@ -49,6 +49,16 @@ traintrack:
     access-token-ttl: ${JWT_ACCESS_TOKEN_TTL_MINUTES:15}m
     refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL_DAYS:7}d
 
+  s3:
+    bucket: ${S3_BUCKET_NAME:traintrack-certificates}
+    region: ${AWS_REGION:us-east-1}
+    # Set only for LocalStack — leave AWS_S3_ENDPOINT unset in real
+    # environments so the SDK talks to AWS's own regional endpoints.
+    endpoint: ${AWS_S3_ENDPOINT:http://localhost:4566}
+    access-key: ${AWS_ACCESS_KEY_ID:test}
+    secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+    presigned-url-ttl: ${S3_PRESIGNED_URL_TTL_MINUTES:15}m
+
 server:
   port: 8080
 

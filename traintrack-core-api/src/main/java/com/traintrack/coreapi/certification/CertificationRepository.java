@@ -4,6 +4,7 @@ import com.traintrack.coreapi.domain.Certification;
 import com.traintrack.coreapi.domain.CertificationStatus;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,10 @@ public interface CertificationRepository
         extends JpaRepository<Certification, UUID>, JpaSpecificationExecutor<Certification> {
 
     Page<Certification> findByUserId(UUID userId, Pageable pageable);
+
+    /** See UserRepository.findByIdScoped for why this goes through JPQL rather than findById. */
+    @Query("select c from Certification c where c.id = :id")
+    Optional<Certification> findByIdScoped(@Param("id") UUID id);
 
     /**
      * Runs without an org context (no authenticated caller for a background

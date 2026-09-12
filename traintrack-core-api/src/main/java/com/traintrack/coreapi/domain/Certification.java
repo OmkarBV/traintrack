@@ -47,7 +47,13 @@ public class Certification extends Auditable {
     @Column(name = "expiring_notified_at")
     private Instant expiringNotifiedAt;
 
-    /** S3 object key for the generated PDF certificate; populated in Phase 7, nullable until then. */
+    /**
+     * The S3 object key for the generated PDF certificate — despite the
+     * column/field name, never a directly-usable URL: the bucket has no
+     * public access, so every download goes through a short-lived presigned
+     * URL minted on request (see CertificateStorageService), not this raw
+     * key. Only null for certifications issued before Phase 7, if any.
+     */
     @Column(name = "certificate_url", length = 1024)
     private String certificateUrl;
 

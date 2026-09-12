@@ -1,5 +1,6 @@
 package com.traintrack.coreapi.certification;
 
+import com.traintrack.coreapi.certification.dto.CertificateDownloadResponse;
 import com.traintrack.coreapi.certification.dto.CertificationResponse;
 import com.traintrack.coreapi.domain.CertificationStatus;
 import java.time.Instant;
@@ -43,5 +44,17 @@ public class CertificationController {
     @PreAuthorize("hasAuthority('CERT_VIEW_ALL') or (hasAuthority('CERT_VIEW_OWN') and #id == authentication.principal.userId())")
     public Page<CertificationResponse> byUser(@PathVariable UUID id, @PageableDefault(size = 20) Pageable pageable) {
         return certificationService.findByUser(id, pageable).map(certificationMapper::toResponse);
+    }
+
+    /**
+     * Coarse-grained gate here (has either permission at all); the
+     * fine-grained "is this actually the caller's own certificate" check
+     * happens in the service, against the certification that id resolves to
+     * — see {@link CertificationService#generateDownloadUrl}.
+     */
+    @GetMapping("/api/v1/certifications/{id}/download-url")
+    @PreAuthorize("hasAuthority('CERT_VIEW_ALL') or hasAuthority('CERT_VIEW_OWN')")
+    public CertificateDownloadResponse downloadUrl(@PathVariable UUID id) {
+        return certificationService.generateDownloadUrl(id);
     }
 }

@@ -97,6 +97,12 @@
             <artifactId>s3</artifactId>
         </dependency>
 
+        <!-- PDF certificate generation -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+        </dependency>
+
         <!-- Mapping -->
         <dependency>
             <groupId>org.mapstruct</groupId>

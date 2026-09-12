@@ -8,10 +8,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static org.mockito.ArgumentMatchers.eq;
+
 import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.certification.CertificationMapper;
 import com.traintrack.coreapi.certification.CertificationRepository;
 import com.traintrack.coreapi.certification.dto.CertificationResponse;
+import com.traintrack.coreapi.certification.storage.CertificatePdfGenerator;
+import com.traintrack.coreapi.certification.storage.CertificateStorageService;
 import com.traintrack.coreapi.common.exception.ConflictException;
 import com.traintrack.coreapi.common.exception.NotFoundException;
 import com.traintrack.coreapi.course.CourseRepository;
@@ -70,6 +74,12 @@ class EnrolmentServiceTest {
     @Mock
     private AuditPublisher auditPublisher;
 
+    @Mock
+    private CertificatePdfGenerator certificatePdfGenerator;
+
+    @Mock
+    private CertificateStorageService certificateStorageService;
+
     private EnrolmentService enrolmentService;
     private final UUID orgId = UUID.randomUUID();
 
@@ -83,7 +93,9 @@ class EnrolmentServiceTest {
                 enrolmentMapper,
                 certificationMapper,
                 idempotencyService,
-                auditPublisher);
+                auditPublisher,
+                certificatePdfGenerator,
+                certificateStorageService);
         AuthenticatedUser principal =
                 new AuthenticatedUser(UUID.randomUUID(), orgId, "admin@acme.test", Set.of("ENROLMENT_CREATE"));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, List.of()));
@@ -185,11 +197,15 @@ class EnrolmentServiceTest {
     void completeIssuesACertificationExpiringAfterCourseValidityMonths() {
         Enrolment enrolment = enrolmentOf(EnrolmentStatus.ENROLLED);
         UUID id = UUID.randomUUID();
+        byte[] pdfBytes = "pdf-bytes".getBytes();
         when(enrolmentRepository.findByIdScoped(id)).thenReturn(Optional.of(enrolment));
         when(certificationRepository.save(any(Certification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(certificatePdfGenerator.generate(any(Certification.class))).thenReturn(pdfBytes);
+        when(certificateStorageService.upload(eq(orgId), any(), eq(pdfBytes))).thenReturn("certificates/key.pdf");
         when(certificationMapper.toResponse(any(Certification.class))).thenAnswer(inv -> {
             Certification c = inv.getArgument(0);
-            return new CertificationResponse(UUID.randomUUID(), null, null, c.getIssuedAt(), c.getExpiresAt(), c.getStatus(), null);
+            return new CertificationResponse(
+                    UUID.randomUUID(), null, null, c.getIssuedAt(), c.getExpiresAt(), c.getStatus(), c.getCertificateUrl());
         });
 
         CertificationResponse response = enrolmentService.complete(id);
@@ -198,6 +214,7 @@ class EnrolmentServiceTest {
         assertThat(enrolment.getCompletedAt()).isNotNull();
         assertThat(response.status()).isEqualTo(CertificationStatus.ACTIVE);
         assertThat(response.expiresAt()).isAfter(response.issuedAt());
+        assertThat(response.certificateUrl()).isEqualTo("certificates/key.pdf");
     }
 
     private Enrolment enrolmentOf(EnrolmentStatus status) {

@@ -4,6 +4,8 @@ import com.traintrack.coreapi.audit.AuditPublisher;
 import com.traintrack.coreapi.certification.CertificationRepository;
 import com.traintrack.coreapi.certification.CertificationMapper;
 import com.traintrack.coreapi.certification.dto.CertificationResponse;
+import com.traintrack.coreapi.certification.storage.CertificatePdfGenerator;
+import com.traintrack.coreapi.certification.storage.CertificateStorageService;
 import com.traintrack.coreapi.common.exception.ConflictException;
 import com.traintrack.coreapi.common.exception.NotFoundException;
 import com.traintrack.coreapi.course.CourseRepository;
@@ -39,6 +41,8 @@ public class EnrolmentService {
     private final CertificationMapper certificationMapper;
     private final IdempotencyService idempotencyService;
     private final AuditPublisher auditPublisher;
+    private final CertificatePdfGenerator certificatePdfGenerator;
+    private final CertificateStorageService certificateStorageService;
 
     public EnrolmentService(
             EnrolmentRepository enrolmentRepository,
@@ -48,7 +52,9 @@ public class EnrolmentService {
             EnrolmentMapper enrolmentMapper,
             CertificationMapper certificationMapper,
             IdempotencyService idempotencyService,
-            AuditPublisher auditPublisher) {
+            AuditPublisher auditPublisher,
+            CertificatePdfGenerator certificatePdfGenerator,
+            CertificateStorageService certificateStorageService) {
         this.enrolmentRepository = enrolmentRepository;
         this.userRepository = userRepository;
         this.courseRepository = courseRepository;
@@ -57,6 +63,8 @@ public class EnrolmentService {
         this.certificationMapper = certificationMapper;
         this.idempotencyService = idempotencyService;
         this.auditPublisher = auditPublisher;
+        this.certificatePdfGenerator = certificatePdfGenerator;
+        this.certificateStorageService = certificateStorageService;
     }
 
     /**
@@ -142,6 +150,18 @@ public class EnrolmentService {
         Certification certification = new Certification(
                 enrolment.getOrgId(), enrolment.getUser(), course, now, expiresAt, CertificationStatus.ACTIVE);
         Certification savedCertification = certificationRepository.save(certification);
+
+        // Generated and uploaded synchronously, in the same transaction as
+        // the certification row: a certification without a retrievable
+        // certificate document is a bug, not a valid intermediate state, so
+        // if S3 is unreachable the whole completion should roll back rather
+        // than leave the row half-finished. The trade-off — a DB transaction
+        // held open for the duration of an S3 call — is deliberate for this
+        // scale; see the README for what changes at higher throughput.
+        byte[] pdfBytes = certificatePdfGenerator.generate(savedCertification);
+        String certificateKey =
+                certificateStorageService.upload(enrolment.getOrgId(), savedCertification.getId(), pdfBytes);
+        savedCertification.setCertificateUrl(certificateKey);
 
         UUID actorId = CurrentUser.requireUserId();
         auditPublisher.record(
