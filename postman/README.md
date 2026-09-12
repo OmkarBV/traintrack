@@ -1,11 +1,14 @@
 # TrainTrack Postman collection
 
-`TrainTrack.postman_collection.json` — import it into Postman and you're done; it's self-contained (no separate environment file needed). Every URL, seeded id, and credential it uses is a collection variable with a working default, and the login requests write the access tokens they get back into those same variables automatically.
+Two files, both optional to combine:
+
+- `TrainTrack.postman_collection.json` — the requests. Works standalone: every URL, seeded id, and credential it uses falls back to a collection variable with a working default (Postman → select the collection → **Variables** tab to see them).
+- `TrainTrack.postman_environment.json` — the same variables, as an actual Environment, for anyone who'd rather use Postman's environment dropdown (top-right) than dig into collection variables. Import it too and select it if you want this view — the login requests write the tokens they capture to *both* places, so it works whichever way you import.
 
 ## Use it
 
 1. `docker compose up -d`, then start core-api (`./mvnw -pl traintrack-core-api -am spring-boot:run`, `:8080`) — and audit-service too if you want the "Audit Service" folder to return anything (`:8081`).
-2. Import `TrainTrack.postman_collection.json` (File → Import, or drag it in).
+2. Import `TrainTrack.postman_collection.json` (File → Import, or drag it in). Import `TrainTrack.postman_environment.json` the same way if you want the environment dropdown too, then select **TrainTrack — Local** from it (top-right of the Postman window).
 3. Run the four requests in **Auth** first — Acme Admin, Trainer, Employee, Beta Admin. Everything else depends on the tokens they capture. Easiest way: open the collection's `...` menu → **Run collection** and run the whole thing top to bottom once.
 
 ## What's in it

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e1a2b3c4-1111-4a2b-9c3d-a1b2c3d4e5f6",
     "name": "TrainTrack",
-    "description": "Self-contained collection for the TrainTrack backend (all 10 phases). No separate environment needed — every value it uses is a collection variable with a sensible default; login requests write the tokens they capture back into those same variables.\n\nBefore running anything:\n1. `docker compose up -d` (Postgres, Kafka, LocalStack)\n2. Start core-api (`./mvnw -pl traintrack-core-api -am spring-boot:run`, :8080) and, if you want the Audit Service folder to return anything, audit-service too (:8081)\n3. Run the four requests in **Auth** first (Acme Admin, Trainer, Employee, Beta Admin) — everything else reuses the tokens they capture. Easiest way: open the collection's \"...\" menu → Run collection, and run the whole thing top to bottom once.\n\nSeeded users (all passwords `password123`): admin@acme.test (ADMIN), trainer@acme.test (TRAINER), employee@acme.test (EMPLOYEE), admin@beta.test (ADMIN, a *different* organisation — used here to demonstrate tenant isolation).\n\nNotes:\n- **Idempotency-Key**: enrolment creation requires this header. The collection uses a fixed `idempotencyKey` variable on purpose — resend \"Create Enrolment\" unchanged to see the exact same response come back instead of a new enrolment (see \"Create Enrolment — Replay Same Idempotency Key\"). Change that variable to a fresh UUID first if you actually want to create another one.\n- **AI Assistant**: needs a real `ANTHROPIC_API_KEY` configured on core-api or you'll get a clean 502 (`AssistantUnavailableException`) — that's the app working as designed against a missing/invalid key, not a broken request. It's also rate-limited (`ASSISTANT_RATE_LIMIT_MAX_REQUESTS`, default 20/hour/user).\n- **Bulk Enrolment**: the \"file\" form-data field needs a file attached manually (Postman can't ship an embedded file in a portable collection) — use `postman/sample-bulk-enrolment.csv` from the repo, or any CSV with a `userId,courseId` header.",
+    "description": "Collection for the TrainTrack backend (all 10 phases). Works either way: import just this file and every value falls back to a collection variable with a sensible default, or also import TrainTrack.postman_environment.json and select it (top-right environment dropdown) to see the values in the more familiar environment view instead — login requests write the tokens they capture to both places, so either works.\n\nBefore running anything:\n1. `docker compose up -d` (Postgres, Kafka, LocalStack)\n2. Start core-api (`./mvnw -pl traintrack-core-api -am spring-boot:run`, :8080) and, if you want the Audit Service folder to return anything, audit-service too (:8081)\n3. Run the four requests in **Auth** first (Acme Admin, Trainer, Employee, Beta Admin) — everything else reuses the tokens they capture. Easiest way: open the collection's \"...\" menu → Run collection, and run the whole thing top to bottom once.\n\nSeeded users (all passwords `password123`): admin@acme.test (ADMIN), trainer@acme.test (TRAINER), employee@acme.test (EMPLOYEE), admin@beta.test (ADMIN, a *different* organisation — used here to demonstrate tenant isolation).\n\nNotes:\n- **Idempotency-Key**: enrolment creation requires this header. The collection uses a fixed `idempotencyKey` variable on purpose — resend \"Create Enrolment\" unchanged to see the exact same response come back instead of a new enrolment (see \"Create Enrolment — Replay Same Idempotency Key\"). Change that variable to a fresh UUID first if you actually want to create another one.\n- **AI Assistant**: needs a real `ANTHROPIC_API_KEY` configured on core-api or you'll get a clean 502 (`AssistantUnavailableException`) — that's the app working as designed against a missing/invalid key, not a broken request. It's also rate-limited (`ASSISTANT_RATE_LIMIT_MAX_REQUESTS`, default 20/hour/user).\n- **Bulk Enrolment**: the \"file\" form-data field needs a file attached manually (Postman can't ship an embedded file in a portable collection) — use `postman/sample-bulk-enrolment.csv` from the repo, or any CSV with a `userId,courseId` header.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -83,7 +83,9 @@
                 "exec": [
                   "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
                   "const json = pm.response.json();",
+                  "pm.environment.set('acmeAdminToken', json.accessToken);",
                   "pm.collectionVariables.set('acmeAdminToken', json.accessToken);",
+                  "pm.environment.set('acmeAdminRefreshToken', json.refreshToken);",
                   "pm.collectionVariables.set('acmeAdminRefreshToken', json.refreshToken);"
                 ]
               }
@@ -115,7 +117,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
-                  "pm.collectionVariables.set('trainerToken', pm.response.json().accessToken);"
+                  "const token = pm.response.json().accessToken;",
+                  "pm.environment.set('trainerToken', token);",
+                  "pm.collectionVariables.set('trainerToken', token);"
                 ]
               }
             }
@@ -146,7 +150,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
-                  "pm.collectionVariables.set('employeeToken', pm.response.json().accessToken);"
+                  "const token = pm.response.json().accessToken;",
+                  "pm.environment.set('employeeToken', token);",
+                  "pm.collectionVariables.set('employeeToken', token);"
                 ]
               }
             }
@@ -177,7 +183,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
-                  "pm.collectionVariables.set('betaAdminToken', pm.response.json().accessToken);"
+                  "const token = pm.response.json().accessToken;",
+                  "pm.environment.set('betaAdminToken', token);",
+                  "pm.collectionVariables.set('betaAdminToken', token);"
                 ]
               }
             }
@@ -209,7 +217,9 @@
                 "exec": [
                   "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
                   "const json = pm.response.json();",
+                  "pm.environment.set('acmeAdminToken', json.accessToken);",
                   "pm.collectionVariables.set('acmeAdminToken', json.accessToken);",
+                  "pm.environment.set('acmeAdminRefreshToken', json.refreshToken);",
                   "pm.collectionVariables.set('acmeAdminRefreshToken', json.refreshToken);"
                 ]
               }
@@ -315,7 +325,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
-                  "pm.collectionVariables.set('courseId', pm.response.json().id);"
+                  "const id = pm.response.json().id;",
+                  "pm.environment.set('courseId', id);",
+                  "pm.collectionVariables.set('courseId', id);"
                 ]
               }
             }
@@ -422,7 +434,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
-                  "pm.collectionVariables.set('enrolmentId', pm.response.json().id);"
+                  "const id = pm.response.json().id;",
+                  "pm.environment.set('enrolmentId', id);",
+                  "pm.collectionVariables.set('enrolmentId', id);"
                 ]
               }
             }
@@ -484,7 +498,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code === 200) {",
-                  "  pm.collectionVariables.set('certificationId', pm.response.json().id);",
+                  "  const id = pm.response.json().id;",
+                  "  pm.environment.set('certificationId', id);",
+                  "  pm.collectionVariables.set('certificationId', id);",
                   "}"
                 ]
               }
@@ -516,7 +532,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 202', function () { pm.response.to.have.status(202); });",
-                  "pm.collectionVariables.set('bulkJobId', pm.response.json().jobId);"
+                  "const jobId = pm.response.json().jobId;",
+                  "pm.environment.set('bulkJobId', jobId);",
+                  "pm.collectionVariables.set('bulkJobId', jobId);"
                 ]
               }
             }
