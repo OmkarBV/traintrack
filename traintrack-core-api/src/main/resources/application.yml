@@ -59,6 +59,14 @@ traintrack:
     secret-key: ${AWS_SECRET_ACCESS_KEY:test}
     presigned-url-ttl: ${S3_PRESIGNED_URL_TTL_MINUTES:15}m
 
+  assistant:
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+    max-tokens: ${ANTHROPIC_MAX_TOKENS:1024}
+    rate-limit:
+      max-requests: ${ASSISTANT_RATE_LIMIT_MAX_REQUESTS:20}
+      window: ${ASSISTANT_RATE_LIMIT_WINDOW_MINUTES:60}m
+
 server:
   port: 8080
 
