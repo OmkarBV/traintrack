@@ -1,0 +1,766 @@
+{
+  "info": {
+    "_postman_id": "e1a2b3c4-1111-4a2b-9c3d-a1b2c3d4e5f6",
+    "name": "TrainTrack",
+    "description": "Self-contained collection for the TrainTrack backend (all 10 phases). No separate environment needed — every value it uses is a collection variable with a sensible default; login requests write the tokens they capture back into those same variables.\n\nBefore running anything:\n1. `docker compose up -d` (Postgres, Kafka, LocalStack)\n2. Start core-api (`./mvnw -pl traintrack-core-api -am spring-boot:run`, :8080) and, if you want the Audit Service folder to return anything, audit-service too (:8081)\n3. Run the four requests in **Auth** first (Acme Admin, Trainer, Employee, Beta Admin) — everything else reuses the tokens they capture. Easiest way: open the collection's \"...\" menu → Run collection, and run the whole thing top to bottom once.\n\nSeeded users (all passwords `password123`): admin@acme.test (ADMIN), trainer@acme.test (TRAINER), employee@acme.test (EMPLOYEE), admin@beta.test (ADMIN, a *different* organisation — used here to demonstrate tenant isolation).\n\nNotes:\n- **Idempotency-Key**: enrolment creation requires this header. The collection uses a fixed `idempotencyKey` variable on purpose — resend \"Create Enrolment\" unchanged to see the exact same response come back instead of a new enrolment (see \"Create Enrolment — Replay Same Idempotency Key\"). Change that variable to a fresh UUID first if you actually want to create another one.\n- **AI Assistant**: needs a real `ANTHROPIC_API_KEY` configured on core-api or you'll get a clean 502 (`AssistantUnavailableException`) — that's the app working as designed against a missing/invalid key, not a broken request. It's also rate-limited (`ASSISTANT_RATE_LIMIT_MAX_REQUESTS`, default 20/hour/user).\n- **Bulk Enrolment**: the \"file\" form-data field needs a file attached manually (Postman can't ship an embedded file in a portable collection) — use `postman/sample-bulk-enrolment.csv` from the repo, or any CSV with a `userId,courseId` header.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "coreApiUrl", "value": "http://localhost:8080" },
+    { "key": "auditServiceUrl", "value": "http://localhost:8081" },
+
+    { "key": "seedPassword", "value": "password123" },
+    { "key": "acmeAdminEmail", "value": "admin@acme.test" },
+    { "key": "trainerEmail", "value": "trainer@acme.test" },
+    { "key": "employeeEmail", "value": "employee@acme.test" },
+    { "key": "betaAdminEmail", "value": "admin@beta.test" },
+
+    { "key": "acmeOrgId", "value": "a0000000-0000-0000-0000-000000000001" },
+    { "key": "betaOrgId", "value": "a0000000-0000-0000-0000-000000000002" },
+    { "key": "acmeAdminId", "value": "d0000000-0000-0000-0000-000000000001" },
+    { "key": "trainerId", "value": "d0000000-0000-0000-0000-000000000002" },
+    { "key": "employeeId", "value": "d0000000-0000-0000-0000-000000000003" },
+    { "key": "betaAdminId", "value": "d0000000-0000-0000-0000-000000000004" },
+    { "key": "seedCourseId", "value": "e0000000-0000-0000-0000-000000000001" },
+
+    { "key": "idempotencyKey", "value": "b3b6a1d2-0000-4000-8000-000000000001" },
+
+    { "key": "acmeAdminToken", "value": "" },
+    { "key": "acmeAdminRefreshToken", "value": "" },
+    { "key": "trainerToken", "value": "" },
+    { "key": "employeeToken", "value": "" },
+    { "key": "betaAdminToken", "value": "" },
+
+    { "key": "courseId", "value": "" },
+    { "key": "enrolmentId", "value": "" },
+    { "key": "certificationId", "value": "" },
+    { "key": "bulkJobId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "core-api Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{coreApiUrl}}/actuator/health",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "No auth. Confirms core-api is up before running anything else."
+          },
+          "response": []
+        },
+        {
+          "name": "audit-service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{auditServiceUrl}}/actuator/health",
+              "host": ["{{auditServiceUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "No auth. Only needed if you're also running audit-service for the Audit Service folder."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login — Acme Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('acmeAdminToken', json.accessToken);",
+                  "pm.collectionVariables.set('acmeAdminRefreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{acmeAdminEmail}}\",\n  \"password\": \"{{seedPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/login",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Public. ADMIN role — has every permission. Run this one first; most other folders default to this token."
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Acme Trainer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('trainerToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{trainerEmail}}\",\n  \"password\": \"{{seedPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/login",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Public. TRAINER role — courses, enrolments, certs (org-wide), no USER_MANAGE."
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Acme Employee",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('employeeToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{employeeEmail}}\",\n  \"password\": \"{{seedPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/login",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Public. EMPLOYEE role — read-only, own data only. Used by the RBAC examples folder."
+          },
+          "response": []
+        },
+        {
+          "name": "Login — Beta Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('betaAdminToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{betaAdminEmail}}\",\n  \"password\": \"{{seedPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/login",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Public. ADMIN of Beta Industries — a *different* organisation than Acme. Used to demonstrate tenant isolation: this token should never be able to see Acme's data."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('acmeAdminToken', json.accessToken);",
+                  "pm.collectionVariables.set('acmeAdminRefreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{acmeAdminRefreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/refresh",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "Public (the refresh token itself is the credential). Refresh tokens are single-use — this rotates acmeAdminRefreshToken, so running it twice in a row with the *old* token will 401 on the second try. Run \"Login — Acme Admin\" again if you need a fresh pair."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{acmeAdminRefreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/auth/logout",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Requires a valid access token. Revokes the given refresh token. Returns 204. Run \"Login — Acme Admin\" again afterwards if you want to keep using this collection."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/users/me",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "users", "me"]
+            },
+            "description": "Any authenticated user."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User By Id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/users/{{trainerId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "users", "{{trainerId}}"]
+            },
+            "description": "Requires USER_MANAGE. Looks up a user in the caller's own organisation (Acme)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User By Id — Cross-Org (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/users/{{betaAdminId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "users", "{{betaAdminId}}"]
+            },
+            "description": "Tenant isolation: an Acme admin asking for a Beta user by id gets 404, not 403 — a foreign-org id is indistinguishable from one that doesn't exist at all."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "Create Course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('courseId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Manual Handling Refresher\",\n  \"description\": \"Created from Postman\",\n  \"durationHours\": 3,\n  \"validityMonths\": 12\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses"]
+            },
+            "description": "Requires COURSE_CREATE. Created as DRAFT. Sets {{courseId}} for the rest of this folder and for Enrolments — or just use the seeded {{seedCourseId}} (already PUBLISHED) instead."
+          },
+          "response": []
+        },
+        {
+          "name": "List Courses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses?page=0&size=20",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            },
+            "description": "Requires COURSE_VIEW. Returns a Spring Page — org-scoped automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Course By Id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses/{{seedCourseId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses", "{{seedCourseId}}"]
+            },
+            "description": "Requires COURSE_VIEW. Uses the seeded \"Fire Safety Awareness\" course by default — swap in {{courseId}} to look up the one you just created instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Course",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Manual Handling Refresher\",\n  \"description\": \"Updated from Postman\",\n  \"durationHours\": 3,\n  \"validityMonths\": 12,\n  \"status\": \"PUBLISHED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses/{{courseId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses", "{{courseId}}"]
+            },
+            "description": "Requires COURSE_UPDATE. Full replace, not a partial patch — run \"Create Course\" first so {{courseId}} is set. status must be one of DRAFT, PUBLISHED, ARCHIVED."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Course",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses/{{courseId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses", "{{courseId}}"]
+            },
+            "description": "Requires COURSE_DELETE. Returns 204. Destructive — only run this against the course you created in \"Create Course\", not the seeded {{seedCourseId}}."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Enrolments",
+      "item": [
+        {
+          "name": "Create Enrolment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('enrolmentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "description": "Fixed on purpose — see the collection description for why."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{employeeId}}\",\n  \"courseId\": \"{{seedCourseId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/enrolments",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "enrolments"]
+            },
+            "description": "Requires ENROLMENT_CREATE. Enrols the seeded Employee into the seeded course. Sets {{enrolmentId}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Enrolment — Replay Same Idempotency Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{employeeId}}\",\n  \"courseId\": \"{{seedCourseId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/enrolments",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "enrolments"]
+            },
+            "description": "Exact same request, same Idempotency-Key, as \"Create Enrolment\" above — run it right after. Still 201, but returns the *identical* cached enrolment id rather than creating a second one. This is the whole point of the header: compare the `id` in this response to the previous one."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Enrolment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('certificationId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/enrolments/{{enrolmentId}}/complete",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "enrolments", "{{enrolmentId}}", "complete"]
+            },
+            "description": "Requires ENROLMENT_COMPLETE. Issues a certification, generates a PDF, and uploads it to S3/LocalStack — needs docker-compose's localstack service running or this 500s. Sets {{certificationId}} for the Certifications folder."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bulk Enrolment",
+      "item": [
+        {
+          "name": "Submit Bulk Enrolment (CSV)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', function () { pm.response.to.have.status(202); });",
+                  "pm.collectionVariables.set('bulkJobId', pm.response.json().jobId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Attach postman/sample-bulk-enrolment.csv from the repo (or your own CSV with a userId,courseId header, up to 5000 rows)."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/enrolments/bulk",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "enrolments", "bulk"]
+            },
+            "description": "Requires ENROLMENT_CREATE. Multipart field name must be exactly \"file\". Returns 202 immediately with a jobId; rows process asynchronously in a bounded worker pool — poll \"Get Bulk Job Status\" to watch it finish."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Bulk Job Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/jobs/{{bulkJobId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "jobs", "{{bulkJobId}}"]
+            },
+            "description": "Requires ENROLMENT_VIEW_ALL. Re-send this a few times right after submitting — status moves PENDING → PROCESSING → COMPLETED, and `rows[]` fills in with a per-row SUCCESS/FAILED result and reason."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Certifications",
+      "item": [
+        {
+          "name": "Search Certifications (org-wide)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/certifications?status=ACTIVE&page=0&size=20",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "certifications"],
+              "query": [
+                { "key": "status", "value": "ACTIVE" },
+                { "key": "expiringBefore", "value": "2027-12-31T00:00:00Z", "disabled": true },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            },
+            "description": "Requires CERT_VIEW_ALL. status is one of ACTIVE, EXPIRED, REVOKED (optional); expiringBefore is an optional ISO-8601 instant, disabled here by default — enable it to filter by expiry cutoff."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Certifications (as Employee, own data)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employeeToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/users/{{employeeId}}/certifications?page=0&size=20",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "users", "{{employeeId}}", "certifications"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            },
+            "description": "Requires CERT_VIEW_ALL, or CERT_VIEW_OWN plus the path id matching the caller's own id — this is exactly that second case: the Employee token may only ever ask for {{employeeId}}, never anyone else's."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Certification Download URL",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/certifications/{{certificationId}}/download-url",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "certifications", "{{certificationId}}", "download-url"]
+            },
+            "description": "Requires CERT_VIEW_ALL or CERT_VIEW_OWN (plus, in the second case, actually owning this certificate — enforced in the service, not just this gate). Returns a short-lived S3 presigned URL — paste the `url` field straight into a browser to download the real PDF. Run \"Complete Enrolment\" first so {{certificationId}} is set."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI Assistant",
+      "item": [
+        {
+          "name": "Ask Assistant — Simple Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What courses are available?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/assistant/messages",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "assistant", "messages"]
+            },
+            "description": "Any authenticated user (permission checks happen per-tool inside the assistant, not at this endpoint). Needs a real ANTHROPIC_API_KEY configured on core-api — without one you'll get a clean 502, which is correct behaviour for a bad/missing key, not a broken request. Rate-limited per user (default 20/hour)."
+          },
+          "response": []
+        },
+        {
+          "name": "Ask Assistant — With Conversation History",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{acmeAdminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Which of those has the shortest duration?\",\n  \"history\": [\n    { \"role\": \"user\", \"content\": \"What courses are available?\" },\n    { \"role\": \"assistant\", \"content\": \"There's currently one course: Fire Safety Awareness, 4 hours, valid for 12 months.\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/assistant/messages",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "assistant", "messages"]
+            },
+            "description": "The assistant is stateless server-side — the caller resends prior turns as `history` on every request. `role` is \"user\" or \"assistant\"."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "RBAC & Tenant Isolation Examples",
+      "item": [
+        {
+          "name": "Employee Cannot Create A Course (expect 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{employeeToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Should Not Be Created\",\n  \"durationHours\": 1,\n  \"validityMonths\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses"]
+            },
+            "description": "EMPLOYEE has COURSE_VIEW but not COURSE_CREATE — expect 403."
+          },
+          "response": []
+        },
+        {
+          "name": "Employee Cannot View Another User's Certifications (expect 403)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employeeToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/users/{{trainerId}}/certifications",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "users", "{{trainerId}}", "certifications"]
+            },
+            "description": "EMPLOYEE has only CERT_VIEW_OWN, and this path id isn't their own — expect 403 (compare to \"Get My Certifications\" in the Certifications folder, which is the same call against their own id and succeeds)."
+          },
+          "response": []
+        },
+        {
+          "name": "Beta Admin Cannot See Acme's Course (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{betaAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/courses/{{seedCourseId}}",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "courses", "{{seedCourseId}}"]
+            },
+            "description": "Beta Industries' admin has COURSE_VIEW and every other permission ADMIN carries — but tenant scoping means Acme's course id simply doesn't exist from Beta's point of view. Expect 404, the same tenant-isolation behaviour proven on Users elsewhere in this collection, generalised to Courses."
+          },
+          "response": []
+        },
+        {
+          "name": "Beta Admin Cannot Complete Acme's Enrolment (expect 404)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{betaAdminToken}}" }],
+            "url": {
+              "raw": "{{coreApiUrl}}/api/v1/enrolments/{{enrolmentId}}/complete",
+              "host": ["{{coreApiUrl}}"],
+              "path": ["api", "v1", "enrolments", "{{enrolmentId}}", "complete"]
+            },
+            "description": "Run \"Create Enrolment\" (as Acme Admin) first so {{enrolmentId}} is set, then try this with Beta's admin token — 404, not 403 or 200."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Audit Service",
+      "item": [
+        {
+          "name": "Search Audit Events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{auditServiceUrl}}/api/v1/audit?orgId={{acmeOrgId}}&page=0&size=20",
+              "host": ["{{auditServiceUrl}}"],
+              "path": ["api", "v1", "audit"],
+              "query": [
+                { "key": "orgId", "value": "{{acmeOrgId}}" },
+                { "key": "entityType", "value": "Course", "disabled": true },
+                { "key": "from", "value": "2026-01-01T00:00:00Z", "disabled": true },
+                { "key": "to", "value": "2027-01-01T00:00:00Z", "disabled": true },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ]
+            },
+            "description": "Note the different port — this hits audit-service (:8081), a separate process with its own database, populated asynchronously from core-api's Kafka outbox. No auth on this endpoint currently. Run a few of the requests above first (Create Course, Create Enrolment, ...) and give the consumer a moment before expecting to see them here."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

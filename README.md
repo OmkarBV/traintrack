@@ -77,7 +77,7 @@ Every seeded user's password is `password123`. Two organisations are seeded spec
 ./mvnw test    # full suite, including Testcontainers-based tests — needs a Docker daemon; see CI, below, if yours won't cooperate
 ```
 
-API docs (Swagger UI) are at `/swagger-ui.html` on each service once running.
+API docs (Swagger UI) are at `/swagger-ui.html` on each service once running. For manual testing, [`postman/`](postman/) has a self-contained Postman collection covering every endpoint, including a folder of RBAC/tenant-isolation examples — import `postman/TrainTrack.postman_collection.json` and see `postman/README.md`.
 
 ## Design decisions, phase by phase
 
