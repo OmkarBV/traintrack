@@ -121,6 +121,22 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            Without this, TestRestTemplate falls back to the JDK's built-in
+            HttpURLConnection, which has a long-standing bug: it can't
+            surface a 401 response to a POST with a body as a normal
+            ResponseEntity, throwing HttpRetryException("cannot retry due to
+            server authentication, in streaming mode") instead — breaking
+            any integration test that expects a 401 from a POST endpoint
+            (e.g. a wrong-password login). Spring Boot auto-prefers Apache
+            HttpClient over the JDK default the moment it's on the
+            classpath, with no code changes needed.
+        -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
