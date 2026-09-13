@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -92,5 +93,26 @@ class OutboxRelayTest {
 
         assertThat(event.getPublishedAt()).isNull();
         verify(outboxEventRepository, never()).save(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void doesNotReissueASendWhileThePreviousAttemptIsStillInFlight() {
+        UUID id = UUID.randomUUID();
+        OutboxEvent event = new OutboxEvent(id, UUID.randomUUID(), "audit.events", "{}");
+        when(outboxEventRepository.findById(id)).thenReturn(Optional.of(event));
+        CompletableFuture<SendResult<String, String>> stillPending = new CompletableFuture<>();
+        when(kafkaTemplate.send(any(), any(), any())).thenReturn(stillPending);
+
+        outboxRelay.onOutboxEventReady(new OutboxEventReady(id));
+        outboxRelay.onOutboxEventReady(new OutboxEventReady(id));
+
+        verify(kafkaTemplate, times(1)).send(any(), any(), any());
+
+        stillPending.complete(mock(SendResult.class));
+        assertThat(event.getPublishedAt()).isNotNull();
+
+        outboxRelay.onOutboxEventReady(new OutboxEventReady(id));
+        verify(kafkaTemplate, times(1)).send(any(), any(), any());
     }
 }

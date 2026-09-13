@@ -2,8 +2,10 @@ package com.traintrack.coreapi.audit;
 
 import com.traintrack.coreapi.domain.OutboxEvent;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -41,6 +43,15 @@ public class OutboxRelay {
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    /**
+     * Event IDs with a send currently awaiting Kafka's ack. Guards against
+     * the 5-second sweep re-issuing a send for a row whose previous attempt
+     * hasn't completed yet — without this, a slow or unreachable broker
+     * would let the number of concurrent in-flight sends for one row grow
+     * without bound instead of just retrying every 5 seconds as intended.
+     */
+    private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
+
     public OutboxRelay(OutboxEventRepository outboxEventRepository, KafkaTemplate<String, String> kafkaTemplate) {
         this.outboxEventRepository = outboxEventRepository;
         this.kafkaTemplate = kafkaTemplate;
@@ -58,17 +69,29 @@ public class OutboxRelay {
     }
 
     private void publishIfUnpublished(UUID outboxEventId) {
-        outboxEventRepository.findById(outboxEventId).ifPresent(e -> {
-            if (e.getPublishedAt() != null) {
-                return;
-            }
-            try {
-                kafkaTemplate.send(e.getTopic(), e.getOrgId().toString(), e.getPayload()).get(5, TimeUnit.SECONDS);
-                e.markPublished();
-                outboxEventRepository.save(e);
-            } catch (Exception ex) {
-                log.warn("Failed to publish outbox event {}, will retry via the sweep", outboxEventId, ex);
-            }
-        });
+        if (!inFlight.add(outboxEventId)) {
+            return;
+        }
+        Optional<OutboxEvent> maybeEvent = outboxEventRepository.findById(outboxEventId);
+        if (maybeEvent.isEmpty() || maybeEvent.get().getPublishedAt() != null) {
+            inFlight.remove(outboxEventId);
+            return;
+        }
+        OutboxEvent event = maybeEvent.get();
+        try {
+            kafkaTemplate.send(event.getTopic(), event.getOrgId().toString(), event.getPayload())
+                    .whenComplete((result, ex) -> {
+                        inFlight.remove(outboxEventId);
+                        if (ex != null) {
+                            log.warn("Failed to publish outbox event {}, will retry via the sweep", outboxEventId, ex);
+                            return;
+                        }
+                        event.markPublished();
+                        outboxEventRepository.save(event);
+                    });
+        } catch (Exception ex) {
+            inFlight.remove(outboxEventId);
+            log.warn("Failed to publish outbox event {}, will retry via the sweep", outboxEventId, ex);
+        }
     }
 }
