@@ -50,12 +50,29 @@ public class BulkEnrolmentCoordinator {
     }
 
     private void processOneRow(UUID jobId, UUID orgId, UUID actorId, CsvRow row) {
+        UUID enrolmentId;
         try {
-            UUID enrolmentId = rowProcessor.tryEnrol(orgId, actorId, row);
-            rowProcessor.recordSuccess(jobId, row, enrolmentId);
+            enrolmentId = rowProcessor.tryEnrol(orgId, actorId, row);
         } catch (Exception e) {
             log.debug("Bulk enrolment row {} of job {} failed: {}", row.rowNumber(), jobId, e.getMessage());
             recordFailureSafely(jobId, row, e.getMessage());
+            return;
+        }
+        try {
+            rowProcessor.recordSuccess(jobId, row, enrolmentId);
+        } catch (Exception e) {
+            // The enrolment itself committed in tryEnrol's own transaction; only recording
+            // that outcome failed. Recording this as a plain failure — without saying the
+            // enrolment already exists — would invite a caller to resubmit the row and
+            // create a duplicate enrolment, so the error message says so explicitly.
+            log.error(
+                    "Bulk enrolment row {} of job {} enrolled as {} but recording that success failed",
+                    row.rowNumber(), jobId, enrolmentId, e);
+            recordFailureSafely(
+                    jobId,
+                    row,
+                    "Enrolled successfully (enrolment " + enrolmentId + ") but recording the result failed: "
+                            + e.getMessage());
         }
     }
 

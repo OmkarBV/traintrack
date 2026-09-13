@@ -1,6 +1,8 @@
 package com.traintrack.coreapi.enrolment.bulk;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -45,6 +47,24 @@ class BulkEnrolmentCoordinatorTest {
 
         coordinator.processAsync(jobId, orgId, actorId, List.of(row));
 
+        verify(job).markCompleted();
+    }
+
+    @Test
+    void aRowWhoseEnrolmentSucceededButRecordSuccessFailedIsNotRecordedAsPlainFailure() {
+        UUID jobId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        UUID enrolmentId = UUID.randomUUID();
+        BulkEnrolmentJob job = mock(BulkEnrolmentJob.class);
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        CsvRow row = new CsvRow(1, UUID.randomUUID().toString(), UUID.randomUUID().toString());
+        when(rowProcessor.tryEnrol(orgId, actorId, row)).thenReturn(enrolmentId);
+        doThrow(new RuntimeException("db down")).when(rowProcessor).recordSuccess(jobId, row, enrolmentId);
+
+        coordinator.processAsync(jobId, orgId, actorId, List.of(row));
+
+        verify(rowProcessor).recordFailure(eq(jobId), eq(row), contains(enrolmentId.toString()));
         verify(job).markCompleted();
     }
 }
