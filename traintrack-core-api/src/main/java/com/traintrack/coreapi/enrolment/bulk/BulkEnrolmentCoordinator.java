@@ -55,7 +55,15 @@ public class BulkEnrolmentCoordinator {
             rowProcessor.recordSuccess(jobId, row, enrolmentId);
         } catch (Exception e) {
             log.debug("Bulk enrolment row {} of job {} failed: {}", row.rowNumber(), jobId, e.getMessage());
-            rowProcessor.recordFailure(jobId, row, e.getMessage());
+            recordFailureSafely(jobId, row, e.getMessage());
+        }
+    }
+
+    private void recordFailureSafely(UUID jobId, CsvRow row, String errorMessage) {
+        try {
+            rowProcessor.recordFailure(jobId, row, errorMessage);
+        } catch (Exception e) {
+            log.error("Bulk enrolment row {} of job {} failed, and recording that failure also failed", row.rowNumber(), jobId, e);
         }
     }
 
